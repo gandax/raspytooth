@@ -10,18 +10,24 @@ gpio mode $pin_led_on_off out
 while true
 do
 		# Checking pin state in order to activate or deactivate our bluetooth program
-        pin_state=$(gpio read $pin_b_on_off)
-        if [ $pin_state = 1 ]
-        then
-                # Program is active so powering state led
-				gpio write $pin_led_on_off 1
-                sleep 2
+	pin_state=$(gpio read $pin_b_on_off)
+	if [ $pin_state = 1 ]
+	then
+		# Program is active so powering state led
+		gpio write $pin_led_on_off 1
+		
+		# Insert code to launch main py program here
 
-        elif [ $pin_state = 0 ]
-        then
-                #Program deactivated so we put off the led
-				gpio write $pin_led_on_off 0
-                sleep 2
-        fi
+		sleep 2
+
+	elif [ $pin_state = 0 ]
+	then
+		# Program deactivated so we put off the led
+		gpio write $pin_led_on_off 0
+
+		# Insert code to kill python process here
+
+		sleep 2
+	fi
 done
 

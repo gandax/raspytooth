@@ -1,0 +1,3 @@
+#ignore pyCharm files and directories
+./venv
+./.idea

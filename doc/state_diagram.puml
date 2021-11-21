@@ -1,0 +1,28 @@
+@startuml
+[*] --> BluetoothOFF
+
+BluetoothOFF --> BluetoothON : [BPOnOff]
+BluetoothOFF : Bluetooth Deactivated
+
+BluetoothON : Non-pairable/Non-visible 
+BluetoothON --> BluetoothOFF : [!BPOnOff]
+BluetoothON --> BluetoothIdle : [BPConnect]
+
+BluetoothIdle : Waiting for connection or pairing\nVisible/Pairable
+BluetoothIdle --> BluetoothON  : [TimeoutConnect]
+BluetoothIdle --> BluetoothOFF : [!BPOnOff]
+BluetoothIdle --> Pairing : [DeviceMac not in DeviceList]
+
+Pairing  : Adding new device to device list (TODO : Require identification)
+BluetoothIdle --> Connecting : [DeviceMac in DeviceList]
+Pairing --> Connecting : [DeviceAdded]
+Pairing --> BluetoothIdle  : [!DeviceAdded]
+
+Connecting : Redirecting Audio from device
+
+Connecting --> Connected : [DeviceConnected]
+Connecting --> BluetoothIdle : [!DeviceConnected || BPConnect]
+Connected : Enjoy
+
+Connected --> BluetoothOFF : [BPOnOff]
+@enduml

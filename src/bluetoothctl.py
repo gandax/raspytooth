@@ -15,13 +15,44 @@ logger = logging.getLogger("btctl")
 class Bluetoothctl:
     """A wrapper for bluetoothctl utility."""
 
-
     def __init__(self):
-        subprocess.check_output("rfkill unblock bluetooth", shell=True)
-        self.process = pexpect.spawnu("bluetoothctl", echo=False)
-        self.id_pexpect = "bluetooth"
-        #ADD TGA
+
+        command_on = subprocess.run(['rfkill','unblock', 'bluetooth'], stderr=subprocess.PIPE)
+        # If error output is not empty we raise an error
+        if command_on.stderr != b'' :
+            logging.error(command_on.stderr)
+            raise ConnectionError
+
+        # We check bluetooth interface not to be DOWN
+        check_hci = subprocess.run(['hciconfig'], stdout=subprocess.PIPE)
+        # if DOWN we try to put it UP
+        if str(check_hci.stdout).find("DOWN") != -1:
+            hci_up = subprocess.run(['hciconfig', 'hci0', 'UP'], stderr=subprocess.PIPE)
+            # If it fail we raise an error
+            if hci_up.stderr is not None:
+                logging.error(hci_up.stderr)
+                raise ConnectionError
+
+        # Once we checked that bluetooth is on, we launch bt-agent in place of bluetoothctl
+        self.process = pexpect.spawnu("bt-agent --capability=NoInputNoOutput", echo=False)
+        # With bt-agent we expect this string
+        self.id_pexpect = "Default agent requested"
+        # ADD TGA
         self.process.logfile = sys.stdout
+
+    def __del__(self):
+        logging.info("Désactivation du bluetooth")
+        # Deactivates bluetooth by running rfkill
+        command_off = subprocess.run(['rfkill', 'block bluetooth'], stderr=subprocess.PIPE)
+        # If error output is not empty we raise an error
+        if command_off.stderr is not None:
+            raise ConnectionError
+
+        # We check deactivation of bluetooth
+        check_off = subprocess.run(['rfkill', '-o', 'TYPE,SOFT'], stdout=subprocess.PIPE)
+        # If it's not deactivated we raise an error
+        if str(check_off.stdout).find("bluetooth blocked") == -1:
+            raise ConnectionError
 
     def send(self, command, pause=0):
         self.process.send(f"{command}\n")
@@ -48,7 +79,7 @@ class Bluetoothctl:
         except Exception as e:
             logger.error(e)
 
-	#Ajout TGA
+    #Ajout TGA
     def make_undiscoverable(self):
         """Make device undiscoverable."""
         try:
@@ -56,7 +87,7 @@ class Bluetoothctl:
         except Exception as e:
             logger.error(e)
 
-	#Ajout TGA
+    #Ajout TGA
     def make_pairable(self):
         """Make device pairable."""
         try:
@@ -64,7 +95,7 @@ class Bluetoothctl:
         except Exception as e:
             logger.error(e)
 
-	#Ajout TGA
+    #Ajout TGA
     def make_unpairable(self):
         """Make device unpairable."""
         try:
@@ -198,9 +229,8 @@ class Bluetoothctl:
             )
             return res == 1
 
-    def ExpectDisconnection(self):
-        """Se met en attente de la déconnexion d'un utilisateur """
-        print("Toto_expect")
+    def expect_disconnection(self):
+        """Expect device disconnection"""
         self.process.expect("Connected: no", timeout = None)
         return True
 

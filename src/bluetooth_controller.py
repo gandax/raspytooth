@@ -1,4 +1,4 @@
-#encoding-utf-8
+# encoding-utf-8
 '''
 Created on 20 mai 2021
 
@@ -17,7 +17,9 @@ if not(os.path.exists('/home/pi/logs/messages')):
     with open('/home/pi/logs/messages', 'w') as f:
         pass
 
-logging.basicConfig(filename='/home/pi/logs/messages', filemode='a', format='%(asctime)s - %(filename)s :: %(lineno)d : %(message)s',level=0)
+logging.basicConfig(filename='/home/pi/logs/messages', filemode='a',
+                    format='%(asctime)s - %(filename)s :: %(lineno)d : %(message)s', level=0)
+
 
 class BluetoothController(object):
     '''
@@ -31,38 +33,35 @@ class BluetoothController(object):
         logging.info("Démarrage du module bluetooth")
         module_bluezy_pi = bluezypi.BluezyPi()
         module_vocal = BluezyPiVocal.BluezyPiVocal()
-        #On démarre le module bluetooth
+        # On démarre le module bluetooth
         try :
-            module_bluezy_pi.BluetoothOn()
-        except bluezypi.BluezyPiError :
+            module_bluezy_pi.bluetooth_on()
+        except bluezypi.BluezypiError :
             logging.error("Erreur à la mise en service du bluetooth")
             exit()
         else :
             pass
         
-        return_init_agent = module_bluezy_pi.InitAgent(TIMEOUT)
+        return_init_agent = module_bluezy_pi.init_agent(TIMEOUT)
         
-        if return_init_agent == -2 :
+        if return_init_agent == -2:
             module_vocal.PronounceNoConnection()
-            module_bluezy_pi.GoToBlockedMode()
-        elif return_init_agent == -1 :
+            module_bluezy_pi.go_to_blocked_mode()
+        elif return_init_agent == -1:
             module_vocal.PronounceErrorConnection(module_bluezy_pi.connected_device_name)
         else :
             module_vocal.PronounceConnection(module_bluezy_pi.connected_device_name)
-        
-        
-        if module_bluezy_pi.module_bluetooth.ExpectDisconnection():
+
+        if module_bluezy_pi.bluetooth_module.expect_disconnection():
             module_vocal.PronounceDisconnection(module_bluezy_pi.connected_device_name)
-            module_bluezy_pi.ReinitDeviceInfos()
-            
-        
-        module_bluezy_pi.GoToBlockedMode()
+            module_bluezy_pi.reinit_device_infos()
+
+        module_bluezy_pi.go_to_blocked_mode()
         print("Fin du programme")
         
 
-if __name__=="__main__":
-    
-        BluetoothController()
+if __name__ == "__main__":
+    BluetoothController()
          
          
         

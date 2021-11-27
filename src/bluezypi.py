@@ -19,223 +19,156 @@ if not(os.path.exists('/home/pi/logs/messages')):
     
 logging.basicConfig(filename='/home/pi/logs/messages', filemode='a',format='%(asctime)s - %(filename)s :: %(lineno)d : %(message)s', level=0)
 
-class BluezyPiError(Exception):
+
+class BluezypiError(Exception):
     pass
 
-class BPConnectionError(BluezyPiError):
-    pass
 
+class BpConnectionError(BluezypiError):
+    pass
 
 
 class BluezyPi(object):
     '''
     classdocs
     '''
-    
 
     def __init__(self):
         '''
         Constructor
         '''
-        self.module_bluetooth = bluetoothctl.Bluetoothctl()
+        self.bluetooth_module = bluetoothctl.Bluetoothctl()
         self.connected_device_mac = ""
         self.connected_device_name = ""
         
-        #On récupère la liste des appareils appairés
-        self.paired_devices = self.module_bluetooth.get_paired_devices()
+        # Getting paired device list
+        self.paired_devices = self.bluetooth_module.get_paired_devices()
         
-        #On initialise l'expression régulière
+        # Initializing regular expression
         self.regexp = re.compile('([A-F0-9]{2}:){5}([A-F0-9]{2})')
-        
-    
-    def BluetoothOn(self):
+
+    def connect_device(self, duree_attente) -> int:
         '''
-        Active la fonctionnalité bluetooth en passant par le process RFKILL (blocage soft)
+
         '''
-        #On active le bluetooth via RFKILL
-        logging.info("Activation du bluetooth")
-        
-        commande_on = subprocess.run(['rfkill','unblock', 'bluetooth'], stderr=subprocess.PIPE)
-        #Si la sortie d'erreur est non vide, on remonte une exception
-        if commande_on.stderr != b'' :
-            logging.error(commande_on.stderr)
-            raise BluezyPiError
-        
-        #On vérifie que l'interface bluetooth n'est pas DOWN
-        check_hci = subprocess.run(['hciconfig'], stdout=subprocess.PIPE)
-        #Si elle est DOWN on essaie de la mettre UP
-        if str(check_hci.stdout).find("DOWN") != -1:
-            hci_up = subprocess.run(['hciconfig', 'hci0', 'UP'], stderr=subprocess.PIPE)
-            #Si on échoue, on remonte une erreur
-            if hci_up.stderr is not None:
-                logging.error(hci_up.stderr)
-                raise BluezyPiError
-        
-    def BluetoothOff(self):
-        '''
-        Désactive la fonctionnalité bluetooth en passant par le process RFKILL (blocage soft)
-        '''
-        logging.info("Désactivation du bluetooth")
-        
-        #On active le bluetooth via RFKILL
-        commande_off = subprocess.run(['rfkill','block bluetooth'], stderr=subprocess.PIPE)
-        #Si la sortie d'erreur est non vide, on remonte une exception
-        if commande_off.stderr is not None :
-            raise BluezyPiError
-                           
-        #On vérifie que l'interface bluetooth est bien bloquée
-        check_off = subprocess.run(['rfkill', '-o', 'TYPE,SOFT'], stdout=subprocess.PIPE)
-        #Si ce n'est pas le cas, on lève une erreur
-        if str(check_off.stdout).find("bluetooth blocked") == -1:
-            raise BluezyPiError
-        
-    
-    def ConnectDevice(self):
-        '''
-        #On se met en attente de la demande d'autorisation de service
-        self.module_bluetooth.process.expect('Authorize service\r\n')        
-        #Quand on la reçoit, on transmet l'autorisation
-        self.module_bluetooth.process.sendline('yes')
-        
-        #On se remet de suite en attente de la deuxième demande
-        self.module_bluetooth.process.expect('Authorize service\r\n')
-        #Quand on la reçoit, on transmet l'autorisation
-        self.module_bluetooth.process.sendline('yes')     
-        '''
-        pass
-        
-    def InitAgent(self, duree_attente):
-        '''
-        Initialise un agent de connexion en mode NoInputNoOuput et se met en attente d'une connexion
-        '''
-        
-        logging.info("Initialisation agent bluetooth")
-        #On rend l'appareil pariable
-        self.module_bluetooth.make_pairable()
-        #On vide la sortie
+        # Making device pairable
+        self.bluetooth_module.make_pairable()
+        # Flushing output of agent
         self._flush_output()
-        
-        #On rend l'appareil bluetooth visible
-        self.module_bluetooth.make_discoverable()        
-        #On vide la sortie
+
+        # Making device discoverable
+        self.bluetooth_module.make_discoverable()
+        # Flushing output of agent
         self._flush_output()
-        
-        #On initialise la commande
-        #TODO : gestion de l'option --pin ./home/pi/projet_bluetooth/bluetooth_pin
-        process_agent = pexpect.spawn('bt-agent --capability=NoInputNoOutput')
-        
+        # Initializing command
+        # TODO : gestion de l'option --pin ./home/pi/projet_bluetooth/bluetooth_pin ==> Fichier contenant les codes
+
         time.sleep(3)
-        
-        #On se met en attente de la connexion
-        try :
-            process_agent.expect("Device", timeout = duree_attente)
-        #TODO : Traiter le timeout
+        # We wait for some connection
+        try:
+            self.bluetooth_module.process.expect("Device", timeout=duree_attente)
+        # TODO : Traiter le timeout
         except pexpect.TIMEOUT:
-            logging("Timeout connexion")
-            #On tue le process bt-agent quand on est sur que la connexion s'est faite
-            process_agent.close()
-            #On retourne en mode non-visible
-            self.module_bluetooth.make_undiscoverable()
-            #On vide la sortie
+            logging.info("Connection Timeout")
+            # if connection failed, we kill the agent
+            self.bluetooth_module.process.close()
+            # Get back to undiscoverable
+            self.bluetooth_module.make_undiscoverable()
+            # Emptying output
             self._flush_output()
             return -2
-        else :
+        else:
             pass
-        
-        #Quand la connexion se fait, on récupère les infos sur l'appareil qui se connecte
-        info_connection = process_agent.readline()
-        
-        #On parse info connexion pour récupérer l'@MAC ainsi que le nom de l'appareil
-        #Le format du retour est :
-        #Device: connected_device_name (XX:XX:XX:XX:XX:XX) for UUID 0000YYYYY-0000-1000-8000-00805f9b34fb
-        utf8_info_connection = info_connection.decode('UTF-8')
-        print(utf8_info_connection)
+
+        # When connecting, we retrieve data on connecting device
+        connection_infos = self.bluetooth_module.process.readline()
+
+        # Parsing to get @MAC and device name
+        # Output format is :
+        # Device: connected_device_name (XX:XX:XX:XX:XX:XX) for UUID 0000YYYYY-0000-1000-8000-00805f9b34fb
+        utf8_info_connection = connection_infos.decode('UTF-8')
         match_regexp = self.regexp.search(utf8_info_connection)
-        #Après expect "Device", il ne nous reste que ": connected_device_name (XX:XX:XX:XX:XX:XX) for UUID 0000YYYYY-0000-1000-8000-00805f9b34fb"
+        # after expect "Device", it remains the following characters ":
+        # connected_device_name (XX:XX:XX:XX:XX:XX) for UUID 0000YYYYY-0000-1000-8000-00805f9b34fb"
         prefix = ": "
         tab_info_connection = []
-        tab_info_connection.append(utf8_info_connection[(len(prefix)):(match_regexp.span()[0]- 2)])
+        tab_info_connection.append(utf8_info_connection[(len(prefix)):(match_regexp.span()[0] - 2)])
         tab_info_connection.append(match_regexp.group())
-        
+
         self.connected_device_name = tab_info_connection[0]
-        self.connected_device_mac =  tab_info_connection[1]
-        
-        self.module_bluetooth.id_pexpect = self.connected_device_name
-        
-        #Si l'appareil ne fait pas partie des appareils appairés, on l'ajoute
-        if not(self.CheckIfPaired(self.connected_device_mac)):
-            #On attend que l'appareil se soit appairé pour l'approuver
-            self.module_bluetooth.process.expect(["Paired: yes"])
-            #On vide la sortie
+        self.connected_device_mac = tab_info_connection[1]
+
+        self.bluetooth_module.id_pexpect = self.connected_device_name
+
+        # If device is not in paired devices list we add it
+        # TODO : Send notification when device's added
+        if not (self.check_if_paired(self.connected_device_mac)):
+            # Waiting for pairing to approve device
+            self.bluetooth_module.process.expect(["Paired: yes"])
+            # Removing unused lines
             self._flush_output()
-            logging.info(f'{self.connected_device_name} appairé')
-            
-        
-        #On Vérifie la connexion avec le bluetoothctl
-        self.module_bluetooth.send(f'info {self.connected_device_mac}')
-        try :
-            self.module_bluetooth.process.expect("Connected: yes")
-            #On vide la sortie
+            logging.info(f'{self.connected_device_name} paired')
+
+        # Check connection by asking the info of the device to the bluetooth module
+        self.bluetooth_module.send(f'info {self.connected_device_mac}')
+        try:
+            self.bluetooth_module.process.expect("Connected: yes")
+            # Removing unused lines
             self._flush_output()
-            
+
         except pexpect.TIMEOUT:
-            logging.error(f'Erreur à la connexion de l\'appareil {self.connected_device_name}')
+            logging.error(f'Error with {self.connected_device_name} device connexion')
             return -1
-        else :
-            logging.info(f'{self.connected_device_name} connecté')
-        
-        
-        #On tue le process bt-agent quand on est sûr que la connexion s'est faite
-        process_agent.close()
-        
-        #On retourne en mode non-visible
-        self.module_bluetooth.make_undiscoverable()
-        #On vide la sortie
+        else:
+            logging.info(f'{self.connected_device_name} connected')
+
+        # We kill the agent when the connection is operational
+        self.bluetooth_module.process.close()
+
+        # Get back to undiscoverable mode
+        self.bluetooth_module.make_undiscoverable()
+        # Removing nused lines
         self._flush_output()
         logging.info("end_init_agent")
         return 1
-        
-    
-    def DisconnectDevice(self):
+
+    def disconnect_device(self) -> bool:
         '''
-        Déconnecte l'appareil actuellement connecté
+        Disconnect currently connected device
         '''
-        if self.module_bluetooth.disconnect(self.connected_device_mac) :
-            self.ReinitDeviceInfos()
-            logging.info(f'{self.connected_device_name} déconnecté')
+        if self.bluetooth_module.disconnect(self.connected_device_mac):
+            self.reinit_device_infos()
+            logging.info(f'{self.connected_device_name} disconnected')
             return True
         else:
-            logging.error(f'{self.connected_device_name} : erreur à la déconnexion.')
+            logging.error(f'{self.connected_device_name} : error during disconnection')
             return False
-            
-        
-       
-    def ReinitDeviceInfos(self):
+
+    def reinit_device_infos(self):
         self.connected_device_mac = ""
         self.connected_device_name = ""
-        self.module_bluetooth.id_pexpect = "bluetooth"
-    
-    
-    def GoToBlockedMode(self):
+        self.bluetooth_module.id_pexpect = "bluetooth"
+
+    def go_to_blocked_mode(self) -> None:
         '''
-        Etat nominal lorsqu'il n'y pas de tentative de connexion en cours
+        Nominal state when there's no connection
         '''  
-        self.module_bluetooth.make_unpairable()
-        self.module_bluetooth.make_undiscoverable()
-        logging.info("Passage en mode déconnecté")        
+        self.bluetooth_module.make_unpairable()
+        self.bluetooth_module.make_undiscoverable()
+        logging.info("Going to blocked mode")
        
-    def CheckIfPaired(self, device_mac):
+    def check_if_paired(self, device_mac) -> bool:
         '''
-        Vérifie si un appareil est déjà appairé
+        Check if device's already paired
         '''
         for device in self.paired_devices:
             if device.get('mac_address') == device_mac:
-                logging.info(f'{device_mac} appairé')
+                logging.info(f'{device_mac} already paired')
                 return True
         return False
         
-    def _flush_output(self):
+    def _flush_output(self) -> None:
         '''
-        Vide la sortie pour ne pas perturber les commandes suivantes
+        Removing unuses lines to not disturb the following commands
         '''
-        self.module_bluetooth.process.expect(pexpect.TIMEOUT, timeout = 2)
+        self.bluetooth_module.process.expect(pexpect.TIMEOUT, timeout=2)

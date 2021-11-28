@@ -7,6 +7,7 @@ BluetoothOFF : Bluetooth Deactivated
 BluetoothON : Non-pairable/Non-visible 
 BluetoothON --> BluetoothOFF : [!BPOnOff]
 BluetoothON --> BluetoothIdle : [BPConnect]
+BluetoothON --> Connected : [DeviceMac in DeviceList]
 
 BluetoothIdle : Waiting for connection or pairing\nVisible/Pairable
 BluetoothIdle --> BluetoothON  : [TimeoutConnect]

@@ -25,8 +25,10 @@ PIN_PB_TOGGLE_ON_OFF = 13
 PIN_PB_PAIR_DISCONNECT = 16
 
 # Initializing hardware
+GPIO.setmode(GPIO.BOARD)
 GPIO.setup(PIN_LED_ON, GPIO.OUT)
-PIN_PWM = GPIO.PWM(PIN_LED_BLUETOOTH, 0)
+GPIO.setup(PIN_LED_BLUETOOTH, GPIO.OUT)
+PIN_PWM = GPIO.PWM(PIN_LED_BLUETOOTH, 0.5)
 PIN_PWM.start(0)
 GPIO.setup(PIN_PB_TOGGLE_ON_OFF, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(PIN_PB_PAIR_DISCONNECT, GPIO.IN)
@@ -35,7 +37,7 @@ END_PROGRAM = False
 
 
 # Defining the callback function
-def watch_off_switching(end_sem: threading.Semaphore, bluetooth_module: bluezypi.BluezyPi):
+def watch_off_switching(end_sem: threading.Semaphore):
     # Accessing to global variable
     global END_PROGRAM
     # Watches the evolution of the on off switch position
@@ -47,10 +49,6 @@ def watch_off_switching(end_sem: threading.Semaphore, bluetooth_module: bluezypi
     # We wait for the other threads to finish there are two thread to terminate
     end_sem.acquire(blocking=True)
     end_sem.acquire(blocking=True)
-
-    # Once it's finished we switch off the bluetooth
-    del bluetooth_module
-    # Ending program
 
 
 def wait_for_connection(bluetooth_module: bluezypi.BluezyPi, personal_sem: threading.Semaphore,
@@ -143,12 +141,13 @@ except bluezypi.BluezypiError:
 else:
     pass
 
+print("Init")
 # Initializing threading objects
 sem_known_device_connection = threading.Semaphore()
 sem_new_connection = threading.Semaphore()
 sem_end = threading.Semaphore()
 sem_end_connection = threading.Semaphore()
-thread_blinking = threading.Thread(target=blinking_led(), args=(sem_end_connection,))
+thread_blinking = threading.Thread(target=blinking_led, args=(sem_end_connection,))
 thread_known_device_connection = threading.Thread(target=wait_for_connection,
                                                   args=(bluezy_pi_module, sem_new_connection,
                                                         sem_known_device_connection, sem_end,))
@@ -169,3 +168,6 @@ while not END_PROGRAM:
     thread_new_connection.join()
 
 logging.info("Ending raspytooth.")
+# Once it's finished we switch off the bluetooth
+del bluezy_pi_module
+# Ending program

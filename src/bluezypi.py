@@ -103,7 +103,8 @@ class BluezyPi(object):
         # Parsing to get @MAC and device name
         # Output format is :
         # Device: connected_device_name (XX:XX:XX:XX:XX:XX) for UUID 0000YYYYY-0000-1000-8000-00805f9b34fb
-        utf8_info_connection = connection_infos.decode('UTF-8')
+        # utf8_info_connection = connection_infos.decode('UTF-8')
+        utf8_info_connection = connection_infos
         match_regexp = self.regexp.search(utf8_info_connection)
         # after expect "Device", it remains the following characters ":
         # connected_device_name (XX:XX:XX:XX:XX:XX) for UUID 0000YYYYY-0000-1000-8000-00805f9b34fb"

@@ -19,6 +19,7 @@ if not(os.path.exists('/home/pi/logs/messages')):
     
 logging.basicConfig(filename='/home/pi/logs/messages', filemode='a',format='%(asctime)s - %(filename)s :: %(lineno)d : %(message)s', level=0)
 
+WAITING_TIME = 45
 
 class BluezypiError(Exception):
     pass
@@ -47,36 +48,52 @@ class BluezyPi(object):
         # Initializing regular expression
         self.regexp = re.compile('([A-F0-9]{2}:){5}([A-F0-9]{2})')
 
-    def connect_device(self, duree_attente) -> int:
+    def __del__(self):
+        # At the end, we disconnect the currently connected device and kill bluetooth
+        self.disconnect_device()
+        del self.bluetooth_module
+
+    def connect_device(self, new_device: bool) -> int:
+        '''
+        waiting time
         '''
 
-        '''
-        # Making device pairable
-        self.bluetooth_module.make_pairable()
-        # Flushing output of agent
-        self._flush_output()
+        if new_device:
+            # If it's an unregisterd device connection we make device pairable
+            self.bluetooth_module.make_pairable()
+            # Flushing output of agent
+            self._flush_output()
 
-        # Making device discoverable
-        self.bluetooth_module.make_discoverable()
-        # Flushing output of agent
-        self._flush_output()
-        # Initializing command
-        # TODO : gestion de l'option --pin ./home/pi/projet_bluetooth/bluetooth_pin ==> Fichier contenant les codes
+            # Making device discoverable
+            self.bluetooth_module.make_discoverable()
+            # Flushing output of agent
+            self._flush_output()
+            # Initializing command
+            # TODO : gestion de l'option --pin ./home/pi/projet_bluetooth/bluetooth_pin ==> Fichier contenant les codes
+            time.sleep(3)
 
-        time.sleep(3)
+            # If it's new device we limit the connection time
+            global WAITING_TIME
+            waiting_time = WAITING_TIME
+        else:
+            # If the method is not used for new device connection we permit unlimited timeout
+            waiting_time = 0
+
         # We wait for some connection
         try:
-            self.bluetooth_module.process.expect("Device", timeout=duree_attente)
-        # TODO : Traiter le timeout
+            self.bluetooth_module.process.expect("Device", timeout=waiting_time)
         except pexpect.TIMEOUT:
-            logging.info("Connection Timeout")
-            # if connection failed, we kill the agent
-            self.bluetooth_module.process.close()
-            # Get back to undiscoverable
-            self.bluetooth_module.make_undiscoverable()
-            # Emptying output
-            self._flush_output()
-            return -2
+            if not new_device:
+                logging.info("Connection Timeout")
+                # Get back to undiscoverable
+                self.bluetooth_module.make_undiscoverable()
+                # Emptying output
+                self._flush_output()
+                return -2
+            else:
+                # if we are waiting for already paired device connection, no need to process error
+                return -3
+
         else:
             pass
 
@@ -103,11 +120,17 @@ class BluezyPi(object):
         # If device is not in paired devices list we add it
         # TODO : Send notification when device's added
         if not (self.check_if_paired(self.connected_device_mac)):
-            # Waiting for pairing to approve device
-            self.bluetooth_module.process.expect(["Paired: yes"])
-            # Removing unused lines
-            self._flush_output()
-            logging.info(f'{self.connected_device_name} paired')
+            if not new_device:
+                # Waiting for pairing to approve device
+                self.bluetooth_module.process.expect(["Paired: yes"])
+                # Removing unused lines
+                self._flush_output()
+                logging.info(f'{self.connected_device_name} paired')
+            else:
+                # Raise an error if an unregisterd device is connecting automatically
+                logging.error(f'The unregistered device {self.connected_device_name} is trying to connect. Abortion.')
+                del self.bluetooth_module
+                raise ConnectionError
 
         # Check connection by asking the info of the device to the bluetooth module
         self.bluetooth_module.send(f'info {self.connected_device_mac}')
@@ -166,7 +189,7 @@ class BluezyPi(object):
                 logging.info(f'{device_mac} already paired')
                 return True
         return False
-        
+
     def _flush_output(self) -> None:
         '''
         Removing unuses lines to not disturb the following commands

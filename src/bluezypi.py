@@ -6,10 +6,7 @@ Created on 13 mai 2021
 '''
 
 import bluetoothctl
-import subprocess
-import pexpect
 import time
-import re
 import logging
 import os
 
@@ -21,6 +18,7 @@ logging.basicConfig(filename='/home/pi/logs/messages', filemode='a',format='%(as
 
 WAITING_TIME = 45
 
+
 class BluezypiError(Exception):
     pass
 
@@ -30,9 +28,9 @@ class BpConnectionError(BluezypiError):
 
 
 class BluezyPi(object):
-    '''
-    classdocs
-    '''
+    """
+
+    """
 
     def __init__(self):
         '''
@@ -44,9 +42,6 @@ class BluezyPi(object):
         
         # Getting paired device list
         self.paired_devices = self.bluetooth_module.get_paired_devices()
-        
-        # Initializing regular expression
-        self.regexp = re.compile('([A-F0-9]{2}:){5}([A-F0-9]{2})')
 
     def __del__(self):
         # At the end, we disconnect the currently connected device and kill bluetooth
@@ -59,101 +54,65 @@ class BluezyPi(object):
         '''
 
         if new_device:
-            # If it's an unregisterd device connection we make device pairable
+            # If it's an unregistered device connection we make device pairable
             self.bluetooth_module.make_pairable()
-            # Flushing output of agent
-            self._flush_output()
-
+            print("Made pairable")
             # Making device discoverable
             self.bluetooth_module.make_discoverable()
-            # Flushing output of agent
-            self._flush_output()
+            print("Made discoverable")
             # Initializing command
             # TODO : gestion de l'option --pin ./home/pi/projet_bluetooth/bluetooth_pin ==> Fichier contenant les codes
-            time.sleep(3)
-
             # If it's new device we limit the connection time
             global WAITING_TIME
             waiting_time = WAITING_TIME
         else:
             # If the method is not used for new device connection we permit unlimited timeout
-            waiting_time = 0
-
-        # We wait for some connection
+            waiting_time = -1
         try:
-            self.bluetooth_module.process.expect("Device", timeout=waiting_time)
-        except pexpect.TIMEOUT:
-            if not new_device:
-                logging.info("Connection Timeout")
-                # Get back to undiscoverable
-                self.bluetooth_module.make_undiscoverable()
-                # Emptying output
-                self._flush_output()
-                return -2
-            else:
-                # if we are waiting for already paired device connection, no need to process error
-                return -3
+            print("Waiting for device")
+            tab_info_connection = self.bluetooth_module.configure_agent(waiting_time)
+        except ConnectionError:
+            logging.error("Error during device connection")
+            raise
 
-        else:
-            pass
-
-        # When connecting, we retrieve data on connecting device
-        connection_infos = self.bluetooth_module.process.readline()
-
-        # Parsing to get @MAC and device name
-        # Output format is :
-        # Device: connected_device_name (XX:XX:XX:XX:XX:XX) for UUID 0000YYYYY-0000-1000-8000-00805f9b34fb
-        # utf8_info_connection = connection_infos.decode('UTF-8')
-        utf8_info_connection = connection_infos
-        match_regexp = self.regexp.search(utf8_info_connection)
-        # after expect "Device", it remains the following characters ":
-        # connected_device_name (XX:XX:XX:XX:XX:XX) for UUID 0000YYYYY-0000-1000-8000-00805f9b34fb"
-        prefix = ": "
-        tab_info_connection = []
-        tab_info_connection.append(utf8_info_connection[(len(prefix)):(match_regexp.span()[0] - 2)])
-        tab_info_connection.append(match_regexp.group())
-
+        print("Device found")
         self.connected_device_name = tab_info_connection[0]
         self.connected_device_mac = tab_info_connection[1]
 
-        self.bluetooth_module.id_pexpect = self.connected_device_name
-
-        # If device is not in paired devices list we add it
+        # If device is not in paired devices list we verify that he has been added
         # TODO : Send notification when device's added
         if not (self.check_if_paired(self.connected_device_mac)):
-            if not new_device:
-                # Waiting for pairing to approve device
-                self.bluetooth_module.process.expect(["Paired: yes"])
-                # Removing unused lines
-                self._flush_output()
-                logging.info(f'{self.connected_device_name} paired')
-            else:
-                # Raise an error if an unregisterd device is connecting automatically
-                logging.error(f'The unregistered device {self.connected_device_name} is trying to connect. Abortion.')
+            try:
+                print("Checks pairing")
+                paired = self.bluetooth_module.check_pairing(new_device=(waiting_time > 0),
+                                                             connected_device_name=self.connected_device_name)
+            except ConnectionError:
+                logging.error("Pairing error. Module stopped.")
+                del self.bluetooth_module
+                raise
+
+            if not paired:
+                logging.error("Pairing error. Module stopped.")
                 del self.bluetooth_module
                 raise ConnectionError
 
-        # Check connection by asking the info of the device to the bluetooth module
-        self.bluetooth_module.send(f'info {self.connected_device_mac}')
-        try:
-            self.bluetooth_module.process.expect("Connected: yes")
-            # Removing unused lines
-            self._flush_output()
-
-        except pexpect.TIMEOUT:
-            logging.error(f'Error with {self.connected_device_name} device connexion')
-            return -1
-        else:
+        print("Checks connection")
+        connected = self.bluetooth_module.check_connection(self.connected_device_mac)
+        if connected:
+            print("[#TEST#]Connected[#TEST#]")
             logging.info(f'{self.connected_device_name} connected')
+        else:
+            print("[#TEST#]Not connected[#TEST#]")
+            logging.error(f'Error with {self.connected_device_name} device connexion')
 
         # We kill the agent when the connection is operational
-        self.bluetooth_module.process.close()
+        time.sleep(10)
+        print("Killing agent")
+        self.bluetooth_module.close_agent()
 
         # Get back to undiscoverable mode
         self.bluetooth_module.make_undiscoverable()
         # Removing nused lines
-        self._flush_output()
-        logging.info("end_init_agent")
         return 1
 
     def disconnect_device(self) -> bool:
@@ -191,8 +150,32 @@ class BluezyPi(object):
                 return True
         return False
 
-    def _flush_output(self) -> None:
-        '''
-        Removing unuses lines to not disturb the following commands
-        '''
-        self.bluetooth_module.process.expect(pexpect.TIMEOUT, timeout=2)
+
+if __name__ == "__main__":
+    print("Initialing bluezyPi tests")
+    bluezy_pi = BluezyPi()
+
+    print("Functions to test :")
+    print("1 : connect new device,")
+    print("2 : connect already known device,")
+    print("3 : disconnect device,")
+    ok_choice = False
+
+    while not ok_choice:
+        function_to_test = int(input("Choose the function you want to test : "))
+        ok_choice = True
+        if function_to_test == 1:
+            if bluezy_pi.connect_device(new_device=True):
+                print("Test OK")
+            else:
+                print("Test KO")
+        elif function_to_test == 2:
+            bluezy_pi.connect_device(new_device=False)
+        elif function_to_test == 3:
+            input("Enter the @MAC of the device to disconnect.")
+            bluezy_pi.disconnect_device()
+        else:
+            print("This is not a function.")
+            ok_choice = False
+
+    del bluezy_pi

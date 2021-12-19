@@ -83,26 +83,26 @@ class Bluetoothctl:
         """Make device discoverable."""
         try:
             self.send("discoverable on")
+            self._flush_output(self.process)
         except Exception as e:
             logger.error(e)
 
-    #Ajout TGA
     def make_undiscoverable(self):
         """Make device undiscoverable."""
         try:
             out = self.get_output("discoverable off")
+            self._flush_output(self.process)
         except Exception as e:
             logger.error(e)
 
-    #Ajout TGA
     def make_pairable(self):
         """Make device pairable."""
         try:
             out = self.get_output("pairable on")
+            self._flush_output(self.process)
         except Exception as e:
             logger.error(e)
 
-    #Ajout TGA
     def make_unpairable(self):
         """Make device unpairable."""
         try:
@@ -237,28 +237,28 @@ class Bluetoothctl:
             return res == 1
 
     def configure_agent(self, waiting_time):
-        # Configures a bluetooth-agent in order to initiate connection
+        """ Configures a bluetooth-agent in order to initiate connection """
         self.process_agent = pexpect.spawn('bt-agent --capability=NoInputNoOutput')
         time.sleep(3)
 
         # We wait for some connection
         try:
+            print("[#TEST#]Trying to connect[#TEST#]")
             self.process_agent.expect("Device", timeout=waiting_time)
+
         except pexpect.TIMEOUT:
-            if waiting_time != 0:
+            if waiting_time >= 0:
                 logging.info("Connection Timeout")
                 # Get back to undiscoverable
                 self.make_undiscoverable()
-                # Emptying output
-                self._flush_output(self.process_agent)
-                return -2
+                raise ConnectionError
             else:
                 # if we are waiting for already paired device connection, no need to process error
-                return -3
+                pass
 
         else:
             pass
-
+        print("[#TEST#]Found device[#TEST#]")
         # When connecting, we retrieve data on connecting device
         connection_infos = self.process_agent.readline()
 
@@ -266,6 +266,7 @@ class Bluetoothctl:
         # Output format is :
         # Device: connected_device_name (XX:XX:XX:XX:XX:XX) for UUID 0000YYYYY-0000-1000-8000-00805f9b34fb
         utf8_info_connection = connection_infos.decode('UTF-8')
+        print(utf8_info_connection)
         # utf8_info_connection = connection_infos
         match_regexp = self.regexp.search(utf8_info_connection)
         # after expect "Device", it remains the following characters ":
@@ -284,7 +285,7 @@ class Bluetoothctl:
         return tab_info_connection
 
     def close_agent(self):
-        # Closes the connection agent
+        """ Closes the connection agent """
         if self.process_agent is not None:
             self.process_agent.close()
         else:
@@ -295,11 +296,48 @@ class Bluetoothctl:
         self.process.expect("Connected: no", timeout = None)
         return True
 
+    def check_pairing(self, new_device: bool, connected_device_name: str) -> bool:
+        """Check if a new device has been correctly added to paired devices list. """
+        if new_device:
+            # Waiting for pairing
+            try:
+                self.process.expect(["Paired: yes"])
+                # Removing unused lines
+                self._flush_output(self.process)
+                logging.info(f'{connected_device_name} paired')
+            except pexpect.TIMEOUT:
+                logging.error(f'Error during pairing of {connected_device_name} device.')
+                raise ConnectionError
+            else:
+                return True
+        else:
+            # Raise an error if an unregisterd device is connecting automatically
+            logging.error(f'The unregistered device {connected_device_name} is trying to connect. Abortion.')
+            return False
+
+    def check_connection(self, connected_device_mac: str) -> bool:
+        """
+        Check if the device with connected_device_mac address is connected
+        :param connected_device_mac:
+        :return: Device connected or not
+        """
+        # Check connection by asking the info of the device to the bluetooth module
+        self.send(f'info {connected_device_mac}')
+        try:
+            self.process.expect("Connected: yes")
+            # Removing unused lines
+            self._flush_output(self.process)
+        except pexpect.TIMEOUT:
+            return False
+        else:
+            return True
+
     def _flush_output(self, process_to_flush: pexpect.spawn) -> None:
-        '''
-        Removing unuses lines to not disturb the following commands
-        '''
-        process_to_flush.expect(pexpect.TIMEOUT, timeout=2)
+        """Removing unused lines to not disturb the following commands"""
+        try:
+            process_to_flush.expect(pexpect.TIMEOUT, timeout=2)
+        except pexpect.TIMEOUT:
+            pass
 
 
 def scan_test(bluetooth_controller : Bluetoothctl):
